@@ -6,13 +6,13 @@ function (download_model MODEL_NAME MODEL_DOWNLOAD_FLAG MODEL_RELATIVE_PATH CHEC
     if (NOT EXISTS ${MODEL_FILENAME})
       message(STATUS "NOTE: This process might take several minutes depending on your internet connection.")
       file(DOWNLOAD ${OPENPOSE_URL}${MODEL_RELATIVE_PATH} ${MODEL_FILENAME}
-          EXPECTED_MD5 ${CHECKSUM}) # SHOW_PROGRESS)
-    else (NOT EXISTS ${MODEL_FILENAME})
+          EXPECTED_MD5 ${CHECKSUM} TIMEOUT 300) # Increased timeout
+    else()
       message(STATUS "Model already exists.")
-    endif (NOT EXISTS ${MODEL_FILENAME})
-  else (MODEL_DOWNLOAD_FLAG)
+    endif()
+  else()
     message(STATUS "Not downloading ${MODEL_NAME} model")
-  endif (MODEL_DOWNLOAD_FLAG)
+  endif()
 endfunction (download_model)
 
 # Function to download zip files, then extracting them and then deleting them
@@ -20,13 +20,27 @@ function(download_zip FILE_NAME URL DOWNLOAD_PATH CHECKSUM)
   set(FULL_FILE_PATH "${DOWNLOAD_PATH}/${FILE_NAME}")
   if (NOT EXISTS ${FULL_FILE_PATH})
     message(STATUS "Downloading ${URL}/${FILE_NAME}...")
-    file(DOWNLOAD "${URL}/${FILE_NAME}" "${DOWNLOAD_PATH}/${FILE_NAME}"
-        EXPECTED_MD5 ${CHECKSUM})
+    # Retry logic
+    set(RETRY_COUNT 3)
+    set(SUCCESS FALSE)
+    while (NOT SUCCESS AND RETRY_COUNT GREATER 0)
+      file(DOWNLOAD "${URL}/${FILE_NAME}" "${DOWNLOAD_PATH}/${FILE_NAME}"
+          EXPECTED_MD5 ${CHECKSUM} TIMEOUT 300) # Increased timeout
+      if (NOT ${CMAKE_DL_STATUS} STREQUAL "0")
+        math(EXPR RETRY_COUNT "${RETRY_COUNT} - 1")
+        message(STATUS "Download failed, retrying... (${RETRY_COUNT} attempts left)")
+      else()
+        set(SUCCESS TRUE)
+      endif()
+    endwhile()
+    if (NOT SUCCESS)
+      message(FATAL_ERROR "Failed to download ${FILE_NAME} after multiple attempts.")
+    endif()
     message(STATUS "Extracting ${FULL_FILE_PATH}...")
     execute_process(COMMAND ${CMAKE_COMMAND} -E tar xf ${FILE_NAME} WORKING_DIRECTORY ${DOWNLOAD_PATH})
-    else (NOT EXISTS ${FULL_FILE_PATH})
-      message(STATUS "${FILE_NAME} already exists.")
-  endif (NOT EXISTS ${FULL_FILE_PATH})
+  else()
+    message(STATUS "${FILE_NAME} already exists.")
+  endif()
 endfunction(download_zip)
 
 # Function to prepend filenames with common path
@@ -34,7 +48,7 @@ function(prepend var prefix)
    set(listVar "")
    foreach (f ${ARGN})
       list(APPEND listVar "${prefix}/${f}")
-   endforeach (f)
+   endforeach ()
    set(${var} "${listVar}" PARENT_SCOPE)
 endfunction(prepend)
 
